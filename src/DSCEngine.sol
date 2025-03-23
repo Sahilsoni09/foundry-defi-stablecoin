@@ -59,13 +59,14 @@ contract DSCEngine is ReentrancyGuard {
     error DSCEngine__TransferFailed();
     error DSCEngine__BreaksHealthFactor(uint256 healthFactor);
     error DSCEngine__MintFailed();
+    error DSCEngine__HealthFactorOk();
     
     /*********************************************State Variables********************************/
     uint256 private constant  ADDITIONAL_COLLATERAL_PRECISION = 1e10;
     uint256 private constant PRECISION = 1e18;
     uint256 private constant LIQUIDATION_THRESHOLD = 50; // means 200% over collaterlised
     uint256 private constant LIQUIDATION_PRECISION = 100;
-    uint256 private constant MIN_HEALTH_FACTOR = 1; 
+    uint256 private constant MIN_HEALTH_FACTOR = 1e18; 
 
     mapping(address token => address priceFeed) private s_priceFeeds; // tokenToPriceFeed
     mapping(address user => mapping(address token => uint256 amount)) private s_collateralDeposited;
@@ -155,6 +156,8 @@ contract DSCEngine is ReentrancyGuard {
         burnDsc(amountDscToBurn);
         redeemCollateral(tokenCollateralAddress, amountCollateral);
         // redeem collateral alredy check health factor
+
+
     }
 
     // in order to redeem collateral :
@@ -196,7 +199,40 @@ contract DSCEngine is ReentrancyGuard {
         _revertIfHealthFactorIsBroken(msg.sender); // I don't think this would ever hit...
     }
 
-    function liquidate() external {}
+    /**
+    • User deposited 100$ eth in collateral and mint 50 in DSC
+    • Collateral value falls to $75, breaking the user's Health Factor (0.75)
+    • A liquidator burns $50 in DSC to close the position
+    • The liquidator is rewarded $75 in collateral
+    The liquidator has profited $25
+     */
+
+     /**
+     * @param collateral The erc20 collateral address to liquidate from the user
+     * @param user The user who has bronken the health factor. Their health factor should be below MIN_HEALTH_FACTOR
+     * @param dabtToCover The amount of DSC you want to burn to improve the users health factor
+     * @notice You can partially liquidate a user
+     * @notice you will get a liquidation bonus for taking the users funds
+     * @notice This function working assumes the protocol will be roughly 200% overcollateralized in order for this to work
+     * @notice A known bug would be if the protocol were 100% or less colaterlized, then we  wouldn't be able to incentive the liqidator
+     * For example, if the  price of the collateral plumeted before anyone could be liquidated
+        Follows CEI: checks, effect, interaction
+      */
+    function liquidate(address collateral, address user, uint256 debtToCover) external moreThanZero(debtToCover) nonReentrant{
+        // need to check health factor of the user
+        uint256 startingUserHealthFactor = _healthFactor(user);
+        if(startingUserHealthFactor >= MIN_HEALTH_FACTOR){
+            revert DSCEngine__HealthFactorOk();
+        }
+
+        // we want to burn their DSC debt
+        // and take their collateral
+        // 140$ ETH, 100$DSC
+        // debtToCover == 100$
+        // 100$ of DSC == ?? ETH
+        uint256 tokenAmountFromDebtCovered = getTokenAmountFromUsd(collateral, debtToCover);
+        
+    }
     function getHealthFactor() external view {}
 
     /**********************************************private and Internal Function*************************************/

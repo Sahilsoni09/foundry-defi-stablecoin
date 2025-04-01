@@ -63,6 +63,7 @@ contract DSCEngine is ReentrancyGuard {
     
     /*********************************************State Variables********************************/
     uint256 private constant  ADDITIONAL_COLLATERAL_PRECISION = 1e10;
+    uint256 private constant ADDITIONAL_FEED_PRECISION = 1e10;
     uint256 private constant PRECISION = 1e18;
     uint256 private constant LIQUIDATION_THRESHOLD = 50; // means 200% over collaterlised
     uint256 private constant LIQUIDATION_PRECISION = 100;
@@ -200,6 +201,7 @@ contract DSCEngine is ReentrancyGuard {
     }
 
     /**
+    Example:
     • User deposited 100$ eth in collateral and mint 50 in DSC
     • Collateral value falls to $75, breaking the user's Health Factor (0.75)
     • A liquidator burns $50 in DSC to close the position
@@ -231,7 +233,13 @@ contract DSCEngine is ReentrancyGuard {
         // debtToCover == 100$
         // 100$ of DSC == ?? ETH
         uint256 tokenAmountFromDebtCovered = getTokenAmountFromUsd(collateral, debtToCover);
-        
+        // And give them a 10% bonus
+        // So we are giving the liquidator 110$ weth for 100DSC
+        // We should implement a feature to liquidate in the event the  protocol is insolvent 
+        // and sweep extra amounts into a treasury
+
+        uint256 bonusCollateral = (tokenAmountFromDebtCovered * LIQUIDATION_BONUS) / LIQUIDATION_PRECISION;
+        uint256 totalCollateralToRedeem = tokenAmountFromDebtCovered + bonusCollateral;
     }
     function getHealthFactor() external view {}
 
@@ -267,6 +275,16 @@ contract DSCEngine is ReentrancyGuard {
     }
 
     /**********************************************public and external view Function*************************************/
+    function getTokenAmountFromUsd(address token, uint256 usdAmountInWei) public view returns(uint256){
+        AggregatorV3Interface priceFeed = AggregatorV3Interface(s_priceFeeds[token]);
+        (,int256 price,,,) = priceFeed.latestRoundData();
+        // 1 eth = 1000$
+        // The returned value from CL will be 1000* 1e8
+
+        return ((usdAmountInWei * PRECISION) /(uint256(price)*ADDITIONAL_FEED_PRECISION));
+
+    }
+    
     function getAccountCollateralValue(address user) public view returns(uint256 totalCollateralValueInUsd){
         // loop through each collateral token, get the amount they have deposited
         // map it to the price to get the USD value
